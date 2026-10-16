@@ -12,6 +12,7 @@ import com.admin.entity.*;
 import com.admin.mapper.ForwardMapper;
 import com.admin.service.*;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.alibaba.fastjson.JSONObject;
 import lombok.Data;
@@ -429,6 +430,26 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         boolean result = this.updateById(forward);
 
         return result ? R.ok("服务已" + operation) : R.err("更新状态失败");
+    }
+
+    @Override
+    public R resetForwardFlow(Long id) {
+        // 管理员可重置任意转发，普通用户只能重置自己的转发
+        UserInfo currentUser = getCurrentUserInfo();
+        Forward forward = validateForwardExists(id, currentUser);
+        if (forward == null) {
+            return R.err("端口转发不存在");
+        }
+
+        // 只清零这条转发自己的统计；用户和隧道的流量配额不受影响。
+        // 直接用 SQL 置零，节点上报的 in_flow = in_flow + x 同样是单条原子 SQL，互不覆盖。
+        UpdateWrapper<Forward> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", id)
+                .set("in_flow", 0L)
+                .set("out_flow", 0L)
+                .set("updated_time", System.currentTimeMillis());
+        boolean result = this.update(null, updateWrapper);
+        return result ? R.ok("流量已重置") : R.err("重置流量失败");
     }
 
     @Override

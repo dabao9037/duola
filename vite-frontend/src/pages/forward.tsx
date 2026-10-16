@@ -42,6 +42,7 @@ import {
   pauseForwardService,
   resumeForwardService,
   diagnoseForward,
+  resetForwardFlow,
   updateForwardOrder
 } from "@/api";
 import { JwtUtil } from "@/utils/jwt";
@@ -161,6 +162,9 @@ export default function ForwardPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
   const [forwardToDelete, setForwardToDelete] = useState<Forward | null>(null);
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [forwardToReset, setForwardToReset] = useState<Forward | null>(null);
   const [currentDiagnosisForward, setCurrentDiagnosisForward] = useState<Forward | null>(null);
   const [diagnosisResult, setDiagnosisResult] = useState<DiagnosisResult | null>(null);
   const [addressModalTitle, setAddressModalTitle] = useState('');
@@ -468,6 +472,33 @@ export default function ForwardPage() {
     setSelectedTunnel(tunnel || null);
     setErrors({});
     setModalOpen(true);
+  };
+
+  // 显示重置流量确认
+  const handleResetFlow = (forward: Forward) => {
+    setForwardToReset(forward);
+    setResetModalOpen(true);
+  };
+
+  // 确认重置流量
+  const confirmResetFlow = async () => {
+    if (!forwardToReset) return;
+    setResetLoading(true);
+    try {
+      const res = await resetForwardFlow(forwardToReset.id);
+      if (res.code === 0) {
+        toast.success('流量已重置');
+        setResetModalOpen(false);
+        loadData();
+      } else {
+        toast.error(res.msg || '重置流量失败');
+      }
+    } catch (error) {
+      console.error('重置流量失败:', error);
+      toast.error('重置流量失败');
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   // 显示删除确认
@@ -1318,6 +1349,21 @@ export default function ForwardPage() {
             <Button
               size="sm"
               variant="flat"
+              color="secondary"
+              onPress={() => handleResetFlow(forward)}
+              className="flex-1 min-h-8"
+              aria-label={`重置转发 ${forward.name} 的流量`}
+              startContent={
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                  <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                </svg>
+              }
+            >
+              重置
+            </Button>
+            <Button
+              size="sm"
+              variant="flat"
               color="danger"
               onPress={() => handleDelete(forward)}
               className="flex-1 min-h-8"
@@ -1709,6 +1755,45 @@ export default function ForwardPage() {
                     isLoading={deleteLoading}
                   >
                     确认删除
+                  </Button>
+                </ModalFooter>
+              </>
+            )}
+          </ModalContent>
+        </Modal>
+
+        {/* 重置流量确认模态框 */}
+        <Modal
+          isOpen={resetModalOpen}
+          onOpenChange={setResetModalOpen}
+          size="md"
+          backdrop="blur"
+          placement="center"
+        >
+          <ModalContent>
+            {(onClose) => (
+              <>
+                <ModalHeader className="flex flex-col gap-1">
+                  <h2 className="text-lg font-bold">重置流量</h2>
+                </ModalHeader>
+                <ModalBody>
+                  <p className="text-default-600">
+                    确定要把转发 <span className="font-semibold text-foreground">"{forwardToReset?.name}"</span> 的流量清零吗？
+                  </p>
+                  <p className="text-small text-default-500 mt-2">
+                    当前：↑{formatFlow(forwardToReset?.inFlow || 0)} ↓{formatFlow(forwardToReset?.outFlow || 0)}。只清零这条转发的统计，不影响用户和隧道的流量额度。
+                  </p>
+                </ModalBody>
+                <ModalFooter>
+                  <Button variant="light" onPress={onClose}>
+                    取消
+                  </Button>
+                  <Button
+                    color="secondary"
+                    onPress={confirmResetFlow}
+                    isLoading={resetLoading}
+                  >
+                    确认重置
                   </Button>
                 </ModalFooter>
               </>

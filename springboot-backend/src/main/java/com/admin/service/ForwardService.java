@@ -74,6 +74,13 @@ public interface ForwardService extends IService<Forward> {
     R diagnoseForward(Long id);
 
     /**
+     * 重置转发的流量使用量（上传、下载清零）
+     * @param id 转发ID
+     * @return 结果
+     */
+    R resetForwardFlow(Long id);
+
+    /**
      * 更新转发排序
      * @param params 包含forwards数组的参数
      * @return 更新结果

@@ -63,6 +63,9 @@ export const resumeForwardService = (forwardId: number) => Network.post("/forwar
 // 转发诊断操作
 export const diagnoseForward = (forwardId: number) => Network.post("/forward/diagnose", { forwardId });
 
+// 重置单条转发的流量使用量
+export const resetForwardFlow = (id: number) => Network.post("/forward/reset-flow", { id });
+
 // 转发排序操作
 export const updateForwardOrder = (data: { forwards: Array<{ id: number; inx: number }> }) => Network.post("/forward/update-order", data);
 

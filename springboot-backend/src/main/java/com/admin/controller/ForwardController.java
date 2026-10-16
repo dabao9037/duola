@@ -75,6 +75,21 @@ public class ForwardController extends BaseController {
     }
 
     /**
+     * 重置转发的流量使用量
+     * @param params 包含 id 的参数
+     * @return 结果
+     */
+    @LogAnnotation
+    @PostMapping("/reset-flow")
+    public R resetFlow(@RequestBody Map<String, Object> params) {
+        Object id = params.get("id");
+        if (id == null) {
+            return R.err("转发ID不能为空");
+        }
+        return forwardService.resetForwardFlow(Long.valueOf(id.toString()));
+    }
+
+    /**
      * 转发诊断功能
      * @param params 包含forwardId的参数
      * @return 诊断结果
