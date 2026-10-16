@@ -4,7 +4,8 @@ FROM --platform=$BUILDPLATFORM node:20.19.0 AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+# 上游依赖用 ^ 版本，新发布的 @heroui 子包要求更高的 @heroui/theme，严格 peer 校验会失败
+RUN npm install --legacy-peer-deps
 
 COPY . .
 RUN npm run build
