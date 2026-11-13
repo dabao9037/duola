@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -198,12 +198,40 @@ export default function ForwardPage() {
     strategy: 'fifo'
   });
   
+  // 实时速率（字节/秒），由两次列表拉取的累计值差分得到
+  const [speedMap, setSpeedMap] = useState<Record<number, { up: number; down: number }>>({});
+  const flowSnapshotRef = useRef<{ ts: number; map: Map<number, { inFlow: number; outFlow: number }> } | null>(null);
+
   // 表单验证错误
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [selectedTunnel, setSelectedTunnel] = useState<Tunnel | null>(null);
 
   useEffect(() => {
     loadData();
+  }, []);
+
+  // 页面可见时每 5 秒刷新一次速率，切到后台就停
+  useEffect(() => {
+    let timer: number | undefined;
+    const start = () => {
+      if (timer) window.clearInterval(timer);
+      timer = window.setInterval(() => refreshFlows(), 5000);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshFlows();
+        start();
+      } else if (timer) {
+        window.clearInterval(timer);
+        timer = undefined;
+      }
+    };
+    if (document.visibilityState === 'visible') start();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      if (timer) window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, []);
 
   // 切换显示模式并保存到localStorage
@@ -263,6 +291,47 @@ export default function ForwardPage() {
       }
     } catch (error) {
       console.warn('无法保存显示模式到localStorage:', error);
+    }
+  };
+
+  // 只刷新流量累计值并算速率，不重排列表、不重置展开状态
+  const refreshFlows = async () => {
+    try {
+      const res = await getForwardList();
+      if (res.code !== 0 || !Array.isArray(res.data)) return;
+
+      const now = Date.now();
+      const prev = flowSnapshotRef.current;
+      const nextMap = new Map<number, { inFlow: number; outFlow: number }>();
+      const speeds: Record<number, { up: number; down: number }> = {};
+
+      res.data.forEach((f: any) => {
+        const curIn = Number(f.inFlow) || 0;
+        const curOut = Number(f.outFlow) || 0;
+        nextMap.set(f.id, { inFlow: curIn, outFlow: curOut });
+
+        const before = prev?.map.get(f.id);
+        if (!prev || !before) return;
+        const seconds = (now - prev.ts) / 1000;
+        if (seconds <= 0.5) return;
+        // 清零后累计值会下降，按 0 处理，避免出现负速率
+        speeds[f.id] = {
+          up: Math.max(0, curIn - before.inFlow) / seconds,
+          down: Math.max(0, curOut - before.outFlow) / seconds,
+        };
+      });
+
+      flowSnapshotRef.current = { ts: now, map: nextMap };
+      setSpeedMap(speeds);
+      setForwards(prevList =>
+        prevList.map(item => {
+          const latest = nextMap.get(item.id);
+          if (!latest) return item;
+          return { ...item, inFlow: latest.inFlow, outFlow: latest.outFlow };
+        })
+      );
+    } catch {
+      // 速率刷新失败不影响页面其他功能
     }
   };
 
@@ -721,6 +790,15 @@ export default function ForwardPage() {
     if (value < 1024 * 1024) return (value / 1024).toFixed(2) + ' KB';
     if (value < 1024 * 1024 * 1024) return (value / (1024 * 1024)).toFixed(2) + ' MB';
     return (value / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  };
+
+  // 格式化速率（字节/秒）
+  const formatSpeed = (value?: number): string => {
+    if (!value || value < 1) return '0 B/s';
+    if (value < 1024) return Math.round(value) + ' B/s';
+    if (value < 1024 * 1024) return (value / 1024).toFixed(1) + ' KB/s';
+    if (value < 1024 * 1024 * 1024) return (value / (1024 * 1024)).toFixed(2) + ' MB/s';
+    return (value / (1024 * 1024 * 1024)).toFixed(2) + ' GB/s';
   };
 
   // 格式化入口地址
@@ -1314,6 +1392,12 @@ export default function ForwardPage() {
               <Chip variant="flat" size="sm" className="text-xs" color="success">
                   ↓{formatFlow(forward.outFlow || 0)}
                 </Chip>
+            </div>
+
+            {/* 实时速率 */}
+            <div className="flex items-center justify-end gap-2 text-[11px] text-default-500">
+              <span>↑ {formatSpeed(speedMap[forward.id]?.up)}</span>
+              <span>↓ {formatSpeed(speedMap[forward.id]?.down)}</span>
             </div>
           </div>
           
