@@ -87,6 +87,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                         String requestId = responseJson.getString("requestId");
                         String responseMessage = responseJson.getString("message");
                         String responseType = responseJson.getString("type");
+                        Boolean responseSuccess = responseJson.getBoolean("success");
                         JSONObject responseData = responseJson.getJSONObject("data");
                         
                         if (requestId != null) {
@@ -94,6 +95,8 @@ public class WebSocketServer extends TextWebSocketHandler {
 
                             if (future != null) {
                                 GostDto result = new GostDto();
+                                // 老版本节点没有 success 字段，此时保留 null，由调用方回落比对 msg
+                                result.setSuccess(responseSuccess);
                                 
                                 // 根据响应类型处理不同的数据
                                 if ("PingResponse".equals(responseType) && responseData != null) {
@@ -441,6 +444,7 @@ public class WebSocketServer extends TextWebSocketHandler {
         if (nodeSession == null) {
             log.info("发送消息失败：节点 {} 不在线或会话不存在", node_id);
             GostDto result = new GostDto();
+            result.setSuccess(false);
             result.setMsg("节点不在线");
             return result;
         }
@@ -450,6 +454,7 @@ public class WebSocketServer extends TextWebSocketHandler {
             nodeSessions.remove(node_id);
             sessionLocks.remove(nodeSession.getId());
             GostDto result = new GostDto();
+            result.setSuccess(false);
             result.setMsg("节点连接已断开");
             return result;
         }
@@ -480,6 +485,7 @@ public class WebSocketServer extends TextWebSocketHandler {
             pendingRequests.remove(requestId);
 
             GostDto result = new GostDto();
+            result.setSuccess(false);
             if (e instanceof java.util.concurrent.TimeoutException) {
                 result.setMsg("等待响应超时");
                 log.info("节点 {} 响应超时，可能存在连接问题", node_id);
