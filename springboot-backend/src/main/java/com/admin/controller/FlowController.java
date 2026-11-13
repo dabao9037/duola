@@ -7,6 +7,7 @@ import com.admin.common.lang.R;
 import com.admin.common.task.CheckGostConfigAsync;
 import com.admin.common.utils.AESCrypto;
 import com.admin.common.utils.GostUtil;
+import com.admin.common.utils.NodeServiceSnapshot;
 import com.admin.entity.*;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
@@ -18,8 +19,10 @@ import lombok.extern.slf4j.Slf4j;
 import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -51,6 +54,11 @@ public class FlowController extends BaseController {
 
     // 常量定义
     private static final String SUCCESS_RESPONSE = "ok";
+    /**
+     * 节点配置上报失败时的响应。节点侧只在 body 等于 "ok" 时判定成功，
+     * 这里必须显式返回失败，否则失败会被当成“上报成功”静默吞掉。
+     */
+    private static final String FAIL_RESPONSE = "{\"ok\":false}";
     private static final String DEFAULT_USER_TUNNEL_ID = "0";
     private static final long BYTES_TO_GB = 1024L * 1024L * 1024L;
 
@@ -103,7 +111,10 @@ public class FlowController extends BaseController {
     @LogAnnotation
     public String config(@RequestBody String rawData, String secret) {
         Node node = nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
-        if (node == null) return SUCCESS_RESPONSE;
+        if (node == null) {
+            log.warn("收到未授权节点的配置上报，secret 不匹配");
+            return FAIL_RESPONSE;
+        }
 
         try {
             // 尝试解密数据
@@ -111,15 +122,28 @@ public class FlowController extends BaseController {
 
             // 解析为GostConfigDto
             GostConfigDto gostConfigDto = JSON.parseObject(decryptedData, GostConfigDto.class);
+
+            // 记录节点当前的服务清单：删除前用它过滤真实存在的服务名，对账任务用它找残留
+            Set<String> serviceNames = new HashSet<>();
+            if (gostConfigDto.getServices() != null) {
+                for (com.admin.common.dto.ConfigItem item : gostConfigDto.getServices()) {
+                    if (item != null && item.getName() != null) {
+                        serviceNames.add(item.getName());
+                    }
+                }
+            }
+            NodeServiceSnapshot.update(node.getId(), serviceNames);
+
             checkGostConfigAsync.cleanNodeConfigs(node.getId().toString(), gostConfigDto);
 
-            log.info("🔓 节点 {} 配置数据接收成功{}", node.getId(), isEncryptedMessage(rawData) ? "（已解密）" : "");
+            log.info("🔓 节点 {} 配置数据接收成功，服务 {} 个{}", node.getId(), serviceNames.size(),
+                    isEncryptedMessage(rawData) ? "（已解密）" : "");
 
+            return SUCCESS_RESPONSE;
         } catch (Exception e) {
             log.error("处理节点 {} 配置数据失败: {}", node.getId(), e.getMessage());
+            return FAIL_RESPONSE;
         }
-
-        return SUCCESS_RESPONSE;
     }
 
     @RequestMapping("/test")

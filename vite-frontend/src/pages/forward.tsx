@@ -520,11 +520,11 @@ export default function ForwardPage() {
         loadData();
       } else {
         // 删除失败，询问是否强制删除
-        const confirmed = window.confirm(`常规删除失败：${res.msg || '删除失败'}\n\n是否需要强制删除？\n\n⚠️ 注意：强制删除不会去验证节点端是否已经删除对应的转发服务。`);
+        const confirmed = window.confirm(`常规删除失败：${res.msg || '删除失败'}\n\n是否改为强制删除？\n\n强制删除会删除转发记录，并把节点端残留服务加入待清理队列，节点恢复后自动清理。`);
         if (confirmed) {
           const forceRes = await forceDeleteForward(forwardToDelete.id);
           if (forceRes.code === 0) {
-            toast.success('强制删除成功');
+            toast.success(forceRes.msg || '已加入待清理队列');
             setDeleteModalOpen(false);
             loadData();
           } else {

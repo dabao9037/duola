@@ -52,6 +52,22 @@ public class GostUtil {
         return WebSocketServer.send_msg(node_id, services, "UpdateService");
     }
 
+    /**
+     * 统一判定节点回包是否成功。
+     *
+     * 新版本节点回包带 success 字段，优先采信；老版本没有该字段时，
+     * 回落到比对 msg 是否为 "OK"。
+     */
+    public static boolean isSuccess(GostDto result) {
+        if (result == null) {
+            return false;
+        }
+        if (result.getSuccess() != null) {
+            return result.getSuccess();
+        }
+        return Objects.equals(result.getMsg(), "OK");
+    }
+
     public static GostDto DeleteService(Long node_id, String name) {
         JSONObject data = new JSONObject();
         JSONArray services = new JSONArray();

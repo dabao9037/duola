@@ -153,43 +153,45 @@ func deleteServices(req deleteServicesRequest) error {
 		return errors.New("services list cannot be empty")
 	}
 
-	// 第一阶段：验证所有服务是否存在
-	var servicesToDelete []struct {
-		name    string
-		service service.Service
-	}
+	// 逐项容错：缺失的服务跳过，不让一个不存在的名字挡住整批删除。
+	// 面板习惯一次发 <name>_tcp 和 <name>_udp，历史上只建了其中一个的转发
+	// 会因此永远删不掉（线上出现过端口删了、服务还在跑流量）。
+	deleted := make([]string, 0, len(req.Services))
+	missing := make([]string, 0)
 
 	for _, serviceName := range req.Services {
 		name := strings.TrimSpace(serviceName)
 		if name == "" {
-			return errors.New("service name is required")
+			continue
 		}
 
 		svc := registry.ServiceRegistry().Get(name)
 		if svc == nil {
-			return errors.New("service " + name + " not found")
+			missing = append(missing, name)
+			continue
 		}
 
-		servicesToDelete = append(servicesToDelete, struct {
-			name    string
-			service service.Service
-		}{name, svc})
+		registry.ServiceRegistry().Unregister(name)
+		svc.Close()
+		deleted = append(deleted, name)
 	}
 
-	// 第二阶段：删除所有服务
-	for _, std := range servicesToDelete {
-		registry.ServiceRegistry().Unregister(std.name)
-		std.service.Close()
+	if len(missing) > 0 {
+		fmt.Printf("删除服务：跳过不存在的 %v（已删 %d 个）\n", missing, len(deleted))
 	}
 
-	// 第三阶段：更新配置
+	// 全都不存在时直接返回成功：删除必须是幂等的，重复删除不能报错
+	if len(deleted) == 0 {
+		return nil
+	}
+
 	config.OnUpdate(func(c *config.Config) error {
 		services := c.Services
 		c.Services = nil
 		for _, s := range services {
 			shouldDelete := false
-			for _, std := range servicesToDelete {
-				if s.Name == std.name {
+			for _, name := range deleted {
+				if s.Name == name {
 					shouldDelete = true
 					break
 				}

@@ -5,6 +5,7 @@ import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.dto.ForwardWithTunnelDto;
 import com.admin.common.dto.GostDto;
 import com.admin.common.lang.R;
+import com.admin.common.task.CleanupTaskAsync;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
 import com.admin.common.utils.WebSocketServer;
@@ -63,6 +64,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     @Resource
     NodeService nodeService;
+
+    @Resource
+    @Lazy
+    private CleanupTaskAsync cleanupTaskAsync;
 
 
     @Override
@@ -314,10 +319,22 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             return R.err("端口转发不存在");
         }
 
-        // 3. 直接删除转发记录，跳过GOST服务删除
+        // 3. 记录待清理任务：节点端残留由 CleanupTaskAsync 重试，不再留在节点上跑流量
+        Tunnel tunnel = validateTunnel(forward.getTunnelId());
+        if (tunnel != null && tunnel.getInNodeId() != null) {
+            UserTunnel userTunnel = getUserTunnel(forward.getUserId(), tunnel.getId().intValue());
+            String serviceName = buildServiceName(forward.getId(), forward.getUserId(), userTunnel);
+            try {
+                cleanupTaskAsync.enqueue(forward.getId(), tunnel.getInNodeId(), serviceName, "tcp");
+            } catch (Exception e) {
+                log.warn("登记待清理任务失败: forward={} {}", id, e.getMessage());
+            }
+        }
+
+        // 4. 删除转发记录
         boolean result = this.removeById(id);
         if (result) {
-            return R.ok("端口转发强制删除成功");
+            return R.ok("端口转发已删除，节点端残留服务已加入待清理队列");
         } else {
             return R.err("端口转发强制删除失败");
         }
@@ -1274,7 +1291,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
      * 检查Gost操作是否成功
      */
     private boolean isGostOperationSuccess(GostDto gostResult) {
-        return Objects.equals(gostResult.getMsg(), GOST_SUCCESS_MSG);
+        return GostUtil.isSuccess(gostResult);
     }
 
 
