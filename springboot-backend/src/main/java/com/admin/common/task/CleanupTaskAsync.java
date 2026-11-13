@@ -140,8 +140,15 @@ public class CleanupTaskAsync {
     private void handleOrphan(Long nodeId, String forwardIdText, String suffix, String type) {
         Long forwardId = Long.valueOf(forwardIdText);
         Forward forward = forwardService.getById(forwardId);
-        boolean orphan = forward == null || !belongsToNode(forward, nodeId);
-        if (!orphan) {
+
+        // 转发还在、且服务确实落在这台节点上，就不动它
+        if (forward != null && belongsToNode(forward, nodeId, type)) {
+            return;
+        }
+        // 转发还在、但服务类型是 tls 且无法确认归属时，宁可不动：
+        // 远端 tls 服务挂在出口节点上，误删会直接打断隧道转发。
+        if (forward != null && "tls".equals(type)) {
+            log.info("跳过无法确认归属的 tls 服务: 节点={} 服务={}{}", nodeId, forwardIdText, "_" + suffix);
             return;
         }
 
@@ -150,14 +157,24 @@ public class CleanupTaskAsync {
     }
 
     /**
-     * 转发是否还挂在这台节点上。换过节点后，旧节点上的服务也应视为残留。
+     * 服务是否属于这台节点。
+     *
+     * tcp/udp 入口服务落在隧道入口节点；tls 远端服务落在隧道出口节点。
+     * 两处判断反了会把正常的出站服务当残留删掉。
      */
-    private boolean belongsToNode(Forward forward, Long nodeId) {
+    private boolean belongsToNode(Forward forward, Long nodeId, String type) {
         if (forward.getTunnelId() == null) {
             return false;
         }
         Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
-        return tunnel != null && nodeId.equals(tunnel.getInNodeId());
+        if (tunnel == null) {
+            return false;
+        }
+        if ("tls".equals(type)) {
+            Long outNodeId = tunnel.getOutNodeId() != null ? tunnel.getOutNodeId() : tunnel.getInNodeId();
+            return nodeId.equals(outNodeId);
+        }
+        return nodeId.equals(tunnel.getInNodeId());
     }
 
     public void enqueue(Long forwardId, Long nodeId, String serviceName, String serviceType) {
