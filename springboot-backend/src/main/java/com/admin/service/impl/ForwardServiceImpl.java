@@ -304,6 +304,42 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     @Override
+    public R repairRemoteService(Long id) {
+        UserInfo currentUser = getCurrentUserInfo();
+        if (currentUser.getRoleId() != ADMIN_ROLE_ID) {
+            return R.err("仅管理员可操作");
+        }
+
+        Forward forward = this.getById(id);
+        if (forward == null) {
+            return R.err("转发不存在");
+        }
+
+        Tunnel tunnel = validateTunnel(forward.getTunnelId());
+        if (tunnel == null) {
+            return R.err("隧道不存在");
+        }
+        if (tunnel.getType() != TUNNEL_TYPE_TUNNEL_FORWARD) {
+            return R.err("该转发不是隧道转发，没有远端服务");
+        }
+
+        NodeInfo nodeInfo = getRequiredNodes(tunnel);
+        if (nodeInfo.getOutNode() == null) {
+            return R.err("出口节点不存在");
+        }
+
+        UserTunnel userTunnel = getUserTunnel(forward.getUserId(), tunnel.getId().intValue());
+        String serviceName = buildServiceName(forward.getId(), forward.getUserId(), userTunnel);
+        R result = createRemoteService(nodeInfo.getOutNode(), serviceName, forward, tunnel.getProtocol(), forward.getInterfaceName());
+        if (result.getCode() == 0) {
+            log.info("重建远端服务成功: 转发={} 节点={} 服务={}", id, nodeInfo.getOutNode().getId(), serviceName);
+        } else {
+            log.warn("重建远端服务失败: 转发={} 原因={}", id, result.getMsg());
+        }
+        return result;
+    }
+
+    @Override
     public R resumeForward(Long id) {
         return changeForwardStatus(id, FORWARD_STATUS_ACTIVE, "恢复", "ResumeService");
     }

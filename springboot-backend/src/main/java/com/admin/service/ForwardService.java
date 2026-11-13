@@ -18,6 +18,13 @@ import java.util.Map;
 public interface ForwardService extends IService<Forward> {
 
     /**
+     * 重建隧道转发的远端 tls 服务（管理员维护用）。
+     * 用于误删/丢失远端服务后的恢复。
+     */
+    R repairRemoteService(Long id);
+
+
+    /**
      * 创建端口转发
      * @param forwardDto 转发数据
      * @return 结果

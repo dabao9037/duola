@@ -54,6 +54,12 @@ public class ForwardController extends BaseController {
     }
 
     @LogAnnotation
+    @PostMapping("/repair-remote/{id}")
+    public R repairRemote(@PathVariable Long id) {
+        return forwardService.repairRemoteService(id);
+    }
+
+    @LogAnnotation
     @PostMapping("/force-delete")
     public R forceDelete(@RequestBody Map<String, Object> params) {
         Long id = Long.valueOf(params.get("id").toString());
